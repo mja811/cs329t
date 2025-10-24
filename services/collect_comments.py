@@ -2,8 +2,9 @@ import csv
 import requests
 import time
 import os
+import json
 
-INPUT_FILE = "aita_posts.csv"
+INPUT_FILE = "aita_posts.json"
 OUTPUT_FILE = "aita_comments.csv"
 
 FIELDS = ["post_id", "comment_id", "author", "body", "score", "created_utc", "ups", "downs"]
@@ -15,14 +16,23 @@ if not os.path.isfile(OUTPUT_FILE):
         writer.writeheader()
 
 
-def fetch_comments(post_id):
+def fetch_comments(post_id, retries=3):
     """Fetch top-level comments for a given post ID."""
     url = f"https://www.reddit.com/r/AmItheAsshole/comments/{post_id}.json"
     headers = {"User-Agent": "AITA-CommentCollector/1.0"}
-    response = requests.get(url, headers=headers)
-
-    if response.status_code != 200:
-        print(f"Error {response.status_code} on {post_id}")
+    
+    for attempt in range(1, retries + 1):
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                break
+            else:
+                print(f"Attempt {attempt}: Error {response.status_code} on {post_id}")
+        except requests.RequestException as e:
+            print(f"Attempt {attempt}: Network error on {post_id}: {e}")
+        time.sleep(2 * attempt)
+    else:
+        print(f"Failed to fetch {post_id} after {retries} attempts.")
         return []
 
     try:
@@ -66,17 +76,22 @@ def fetch_comments(post_id):
 
 
 def collect_all_comments():
-    """Iterate over posts in the CSV and collect comments."""
+    """Iterate over posts in the JSON and collect comments."""
     with open(INPUT_FILE, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        posts = list(reader)
+        posts = json.load(f)
+
+    if not isinstance(posts, list):
+        print("Error: INPUT_FILE must contain a list of posts.")
+        return
 
     print(f"Found {len(posts)} posts to collect comments for.\n")
-
     total_comments = 0
 
     for i, post in enumerate(posts, 1):
-        post_id = post["post_id"]
+        post_id = post.get("post_id")
+        if not post_id:
+            continue
+
         print(f"[{i}/{len(posts)}] Fetching comments for post {post_id}...")
 
         comments = fetch_comments(post_id)
@@ -87,9 +102,9 @@ def collect_all_comments():
                 writer.writerows(comments)
 
             total_comments += len(comments)
-            print(f"  Saved {len(comments)} comments ({total_comments} total)")
+            print(f"Saved {len(comments)} comments ({total_comments} total)")
         else:
-            print("  No valid comments found")
+            print("No valid comments found")
 
         # Sleep to respect Reddit rate limits
         time.sleep(2)

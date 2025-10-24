@@ -82,4 +82,4 @@ def collect_posts(max_posts=500):
 
 
 if __name__ == "__main__":
-    collect_posts(max_posts=1000)
+    collect_posts(max_posts=110)

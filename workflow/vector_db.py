@@ -6,54 +6,131 @@ load_dotenv()
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
-import json
+import pandas as pd
+import datetime
 
 
-# could rerank with gpt
 class VectorDB:
-    def __init__(self, json_doc_fpath) -> None:
-        self._format_documents(json_doc_fpath)
-        self._embed()
+    def __init__(self, json_doc_fpath, persist_dir="chroma_db") -> None:
+        self.persist_dir = persist_dir
+        os.makedirs(self.persist_dir, exist_ok=True)
+
+        if self._db_exists():
+            print(f"Loading existing Chroma DB from '{self.persist_dir}'...")
+            self.db = Chroma(
+                persist_directory=self.persist_dir,
+                embedding_function=OpenAIEmbeddings(),
+            )
+        else:
+            print(f"Creating new Chroma DB at '{self.persist_dir}'...")
+            self._format_documents(json_doc_fpath)
+            self._embed()
+
+    def _db_exists(self):
+        # Check if the directory exists and contains chroma.sqlite3
+        if not os.path.isdir(self.persist_dir):
+            return False
+        contents = os.listdir(self.persist_dir)
+        return len(contents) > 0 and any('chroma.sqlite3' in f or 'sqlite3' in f for f in contents)
 
     def _format_documents(self, json_doc_fpath):
         documents = []
-
-        with open(json_doc_fpath, 'r') as f:
-            for line in f:
-                chapter = json.loads(line.strip())
-                chapter_doc = Document(chapter['selftext'])
-                for key in ['id', 'title', 'flair', 'created_utc', 'url']:
-                    chapter_doc.metadata[key] = chapter[key]
-                documents.append(chapter_doc)
-
+        df = pd.read_json(json_doc_fpath)
+        
+        # Drop duplicates if necessary
+        df = df.drop_duplicates(subset=["post_id", "title", "url", "selftext"])
+        
+        for _, row in df.iterrows():
+            selftext = row.get("selftext")
+            
+            # Skip if selftext is empty, null, or not a valid string
+            if pd.isna(selftext) or not str(selftext).strip():
+                continue
+                
+            # Create document with selftext as content
+            chapter_doc = Document(page_content=str(selftext))
+            
+            # Add metadata
+            for key in [
+                "post_id",
+                "title",
+                "flair",
+                "created_utc",
+                "url",
+                "downs",
+                "ups",
+                "score",
+            ]:
+                if key in row:
+                    chapter_doc.metadata[key] = row[key]
+                    
+            documents.append(chapter_doc)
+        
+        print(f"Formatted {len(documents)} documents")
         self.documents = documents
 
     def _embed(self):
-        self.db = Chroma.from_documents(self.documents, OpenAIEmbeddings())
+        if not self.documents:
+            raise ValueError("No documents to embed")
+            
+        self.db = Chroma.from_documents(
+            documents=self.documents,
+            embedding=OpenAIEmbeddings(),
+            persist_directory=self.persist_dir,
+        )
+        print("Chroma DB created and persisted successfully.")
 
     def query(self, query_text, k=1):
-        docs = self.db.similarity_search(query_text)
-        return docs[:k]
+        """Query the vector database for similar documents"""
+        docs = self.db.similarity_search(query_text, k=k)
+        return docs
 
 
-if __name__ == '__main__':
-    vdb = VectorDB(json_doc_fpath='../data/test_data.jsonl')
-    query = "my kid went to jail"
-    print(vdb.query(query, k=5))
+if __name__ == "__main__":
+    vdb = VectorDB(json_doc_fpath="../data/aita_posts.json")
+    
+    query = """My boyfriend and I went to get pedicures together, something we rarely do and I thought would be a nice, 
+    low-key couples activity. He finished before me, and I still had about 25–30 minutes left. Instead of waiting and 
+    relaxing, he suddenly said it felt too hot inside and announced that he was going to walk home to "get some exercise," 
+    since his doctor told him to move more. For context, it wasn't hot outside at all, it was around 70° and really pleasant. 
+    He kept asking if I was okay with him leaving, which made it feel even stranger, like he was waiting for permission to 
+    do something he already knew I'd find odd. I told him it was his choice, but I didn't really understand why he couldn't 
+    just wait. He ended up walking home, which took about 23 minutes. The whole thing felt off, though, mostly because that 
+    just so happened to line up exactly with the time his Discord group (which includes one particular female friend he always 
+    seems eager to talk to) usually gets online. I just found it inconsiderate. We went together, it was supposed to be 
+    something shared, and he couldn't stay 25 more minutes until I was done?"""
 
+    results = vdb.query(query, k=5)
 
-"""
-query = "ITA for not wanting my boyfriend to play Pokémon go instead of spending time with me"
-[Document(id='4d95afcc-02b8-472e-9729-9879bb0267d2', metadata={'title': 'AITA for not wanting my boyfriend to play Pokémon go instead of spending time with me', 'url': 'https://www.reddit.com/r/AmItheAsshole/comments/1o8prbm/aita_for_not_wanting_my_boyfriend_to_play_pokémon/', 'id': 10, 'created_utc': 1760668772, 'flair': 'NAH'}, page_content='Hey all, I (21F) and my partner (21M) have been together pretty happily for just over 6 months. This Saturday is an annual big gala for the organization I am the president of, it’s my final one as I’m resigning from the organization next year, our plan was initially to spend the whole weekend together (Friday evening to Sunday morning) but he got a little sick and I had a bunch of event prep to do so we decided to just see each other on Saturday and he will leave my place Sunday morning, I am doing event prep pretty much all day Saturday until he arrives in the afternoon, however there is a big raid happening around the time he is supposed to arrive and wants to go do the raid for an hour and a half while I take a break from event prep to get ready and eat lunch, I told him since we only are seeing each other Saturday afternoon to Sunday morning until the following weekend, it would mean a lot to spend as much time together as possible and this is a really big day for me and I really want his support. Aita?'), 
-Document(id='406d2789-9fac-41ff-9492-06ed10469926', metadata={'id': 2, 'title': 'AITA for not wanting my boyfriend to play Pokémon go instead of spending time with me', 'created_utc': 1760668772, 'url': 'https://www.reddit.com/r/AmItheAsshole/comments/1o8prbm/aita_for_not_wanting_my_boyfriend_to_play_pokémon/', 'flair': 'NAH'}, page_content='Hey all, I (21F) and my partner (21M) have been together pretty happily for just over 6 months. This Saturday is an annual big gala for the organization I am the president of, it’s my final one as I’m resigning from the organization next year, our plan was initially to spend the whole weekend together (Friday evening to Sunday morning) but he got a little sick and I had a bunch of event prep to do so we decided to just see each other on Saturday and he will leave my place Sunday morning, I am doing event prep pretty much all day Saturday until he arrives in the afternoon, however there is a big raid happening around the time he is supposed to arrive and wants to go do the raid for an hour and a half while I take a break from event prep to get ready and eat lunch, I told him since we only are seeing each other Saturday afternoon to Sunday morning until the following weekend, it would mean a lot to spend as much time together as possible and this is a really big day for me and I really want his support. Aita?'), 
-Document(id='5d54988a-0063-426a-a895-9e4dc5ca2ed3', metadata={'flair': 'NAH', 'created_utc': 1760668772, 'id': 4, 'title': 'AITA for not wanting my boyfriend to play Pokémon go instead of spending time with me', 'url': 'https://www.reddit.com/r/AmItheAsshole/comments/1o8prbm/aita_for_not_wanting_my_boyfriend_to_play_pokémon/'}, page_content='Hey all, I (21F) and my partner (21M) have been together pretty happily for just over 6 months. This Saturday is an annual big gala for the organization I am the president of, it’s my final one as I’m resigning from the organization next year, our plan was initially to spend the whole weekend together (Friday evening to Sunday morning) but he got a little sick and I had a bunch of event prep to do so we decided to just see each other on Saturday and he will leave my place Sunday morning, I am doing event prep pretty much all day Saturday until he arrives in the afternoon, however there is a big raid happening around the time he is supposed to arrive and wants to go do the raid for an hour and a half while I take a break from event prep to get ready and eat lunch, I told him since we only are seeing each other Saturday afternoon to Sunday morning until the following weekend, it would mean a lot to spend as much time together as possible and this is a really big day for me and I really want his support. Aita?'), 
-Document(id='b91e15d9-4313-4d98-8fc8-8ffe0d976083', metadata={'flair': 'NAH', 'url': 'https://www.reddit.com/r/AmItheAsshole/comments/1o8prbm/aita_for_not_wanting_my_boyfriend_to_play_pokémon/', 'id': 8, 'title': 'AITA for not wanting my boyfriend to play Pokémon go instead of spending time with me', 'created_utc': 1760668772}, page_content='Hey all, I (21F) and my partner (21M) have been together pretty happily for just over 6 months. This Saturday is an annual big gala for the organization I am the president of, it’s my final one as I’m resigning from the organization next year, our plan was initially to spend the whole weekend together (Friday evening to Sunday morning) but he got a little sick and I had a bunch of event prep to do so we decided to just see each other on Saturday and he will leave my place Sunday morning, I am doing event prep pretty much all day Saturday until he arrives in the afternoon, however there is a big raid happening around the time he is supposed to arrive and wants to go do the raid for an hour and a half while I take a break from event prep to get ready and eat lunch, I told him since we only are seeing each other Saturday afternoon to Sunday morning until the following weekend, it would mean a lot to spend as much time together as possible and this is a really big day for me and I really want his support. Aita?')]
+    # Create a timestamped filename
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_fpath = f"/results/query_results_{timestamp}.txt"
 
-query = "my kid went to jail"
-[Document(id='6bd6c33d-5875-4c99-ae2e-b3e99c95bb4e', metadata={'flair': 'AH', 'title': 'AITA for absolutely despising my current living situation?', 'created_utc': 1760668968, 'url': 'https://www.reddit.com/r/AmItheAsshole/comments/1o8ptqn/aita_for_absolutely_despising_my_current_living/', 'id': 7}, page_content='So I’m 18 and living with my mom. She knew this kid who I’ll call Dwayne for story purposes. Basically when he was little his dad was in and out of jail and his mom was a druggie, so my mom basically parented him for a good few years. Fast forward to today, and this is where things get messy so bear with me. He married this girl and had two sons with her, neither of which are even 5 yet. They get into a fight and end up separating, and my mom says “Hey since your family won’t let you stay anywhere, come on down here for a bit.” So he does. Then we find out he has a girl he’s been talking to, but then a week later he’s talking things out with his ex and then he’s back to this new girl, it’s just a cycle. Then his baby mama gets with this dude and since she still had Dwayne’s truck, this guy “repairs” it by basically just messing it up. (Not sure what he did since I’m not a car guy.) So then they’re apparently back together and she lets him see his kids every now and then but she stopped after a while and said “you can see them when I know you aren’t on drugs” because he’s had some issues recently. So he tells her she can test him anytime. One day she brings a urine sample cup thing to test him, and guess what? He says he can’t take it today. All of this wouldn’t be so bad if the dude just wasn’t an awful “roommate”. My house has two bathrooms. My mom has her own, and I’m sharing the one I typically use with him. That bathroom has never been more disgusting than today. There’s dirt stains in the shower, toothpicks and q-tips on the ground, he’s just blatantly stolen several things from my shaving box in the bathroom cabinet and I haven’t seen them since. I can’t use my mom’s bathroom because she locks her bedroom every day before she leaves because she’s afraid of him stealing something. One of the prerequisites she gave him to staying here was that he needed a job. It’s been almost a month, and nothing. Me, her, and even my grandmother agree that him being here just isn’t a good idea anymore and I keep telling my mom that if she hates it as much as I do, just kick him out. She always says “where’s he supposed to go?” And I said “It’s not our problem where he goes.” I understand I’m harsh because in total it’s been like half a year with this shit in total, but am I in the wrong? And if so, why? Thank you.'), 
-Document(id='41230633-6b9c-4212-8385-4f844f8e3421', metadata={'flair': 'AH', 'url': 'https://www.reddit.com/r/AmItheAsshole/comments/1o8ptqn/aita_for_absolutely_despising_my_current_living/', 'id': 1, 'title': 'AITA for absolutely despising my current living situation?', 'created_utc': 1760668968}, page_content='So I’m 18 and living with my mom. She knew this kid who I’ll call Dwayne for story purposes. Basically when he was little his dad was in and out of jail and his mom was a druggie, so my mom basically parented him for a good few years. Fast forward to today, and this is where things get messy so bear with me. He married this girl and had two sons with her, neither of which are even 5 yet. They get into a fight and end up separating, and my mom says “Hey since your family won’t let you stay anywhere, come on down here for a bit.” So he does. Then we find out he has a girl he’s been talking to, but then a week later he’s talking things out with his ex and then he’s back to this new girl, it’s just a cycle. Then his baby mama gets with this dude and since she still had Dwayne’s truck, this guy “repairs” it by basically just messing it up. (Not sure what he did since I’m not a car guy.) So then they’re apparently back together and she lets him see his kids every now and then but she stopped after a while and said “you can see them when I know you aren’t on drugs” because he’s had some issues recently. So he tells her she can test him anytime. One day she brings a urine sample cup thing to test him, and guess what? He says he can’t take it today. All of this wouldn’t be so bad if the dude just wasn’t an awful “roommate”. My house has two bathrooms. My mom has her own, and I’m sharing the one I typically use with him. That bathroom has never been more disgusting than today. There’s dirt stains in the shower, toothpicks and q-tips on the ground, he’s just blatantly stolen several things from my shaving box in the bathroom cabinet and I haven’t seen them since. I can’t use my mom’s bathroom because she locks her bedroom every day before she leaves because she’s afraid of him stealing something. One of the prerequisites she gave him to staying here was that he needed a job. It’s been almost a month, and nothing. Me, her, and even my grandmother agree that him being here just isn’t a good idea anymore and I keep telling my mom that if she hates it as much as I do, just kick him out. She always says “where’s he supposed to go?” And I said “It’s not our problem where he goes.” I understand I’m harsh because in total it’s been like half a year with this shit in total, but am I in the wrong? And if so, why? Thank you.'), 
-Document(id='c80c84fa-db47-4dc4-a335-736d2e126134', metadata={'flair': 'AH', 'created_utc': 1760668968, 'title': 'AITA for absolutely despising my current living situation?', 'id': 5, 'url': 'https://www.reddit.com/r/AmItheAsshole/comments/1o8ptqn/aita_for_absolutely_despising_my_current_living/'}, page_content='So I’m 18 and living with my mom. She knew this kid who I’ll call Dwayne for story purposes. Basically when he was little his dad was in and out of jail and his mom was a druggie, so my mom basically parented him for a good few years. Fast forward to today, and this is where things get messy so bear with me. He married this girl and had two sons with her, neither of which are even 5 yet. They get into a fight and end up separating, and my mom says “Hey since your family won’t let you stay anywhere, come on down here for a bit.” So he does. Then we find out he has a girl he’s been talking to, but then a week later he’s talking things out with his ex and then he’s back to this new girl, it’s just a cycle. Then his baby mama gets with this dude and since she still had Dwayne’s truck, this guy “repairs” it by basically just messing it up. (Not sure what he did since I’m not a car guy.) So then they’re apparently back together and she lets him see his kids every now and then but she stopped after a while and said “you can see them when I know you aren’t on drugs” because he’s had some issues recently. So he tells her she can test him anytime. One day she brings a urine sample cup thing to test him, and guess what? He says he can’t take it today. All of this wouldn’t be so bad if the dude just wasn’t an awful “roommate”. My house has two bathrooms. My mom has her own, and I’m sharing the one I typically use with him. That bathroom has never been more disgusting than today. There’s dirt stains in the shower, toothpicks and q-tips on the ground, he’s just blatantly stolen several things from my shaving box in the bathroom cabinet and I haven’t seen them since. I can’t use my mom’s bathroom because she locks her bedroom every day before she leaves because she’s afraid of him stealing something. One of the prerequisites she gave him to staying here was that he needed a job. It’s been almost a month, and nothing. Me, her, and even my grandmother agree that him being here just isn’t a good idea anymore and I keep telling my mom that if she hates it as much as I do, just kick him out. She always says “where’s he supposed to go?” And I said “It’s not our problem where he goes.” I understand I’m harsh because in total it’s been like half a year with this shit in total, but am I in the wrong? And if so, why? Thank you.'), 
-Document(id='9b5fb2af-80c4-42e4-9a95-2794a47d2f8f', metadata={'url': 'https://www.reddit.com/r/AmItheAsshole/comments/1o8ptqn/aita_for_absolutely_despising_my_current_living/', 'flair': 'AH', 'created_utc': 1760668968, 'id': 9, 'title': 'AITA for absolutely despising my current living situation?'}, page_content='So I’m 18 and living with my mom. She knew this kid who I’ll call Dwayne for story purposes. Basically when he was little his dad was in and out of jail and his mom was a druggie, so my mom basically parented him for a good few years. Fast forward to today, and this is where things get messy so bear with me. He married this girl and had two sons with her, neither of which are even 5 yet. They get into a fight and end up separating, and my mom says “Hey since your family won’t let you stay anywhere, come on down here for a bit.” So he does. Then we find out he has a girl he’s been talking to, but then a week later he’s talking things out with his ex and then he’s back to this new girl, it’s just a cycle. Then his baby mama gets with this dude and since she still had Dwayne’s truck, this guy “repairs” it by basically just messing it up. (Not sure what he did since I’m not a car guy.) So then they’re apparently back together and she lets him see his kids every now and then but she stopped after a while and said “you can see them when I know you aren’t on drugs” because he’s had some issues recently. So he tells her she can test him anytime. One day she brings a urine sample cup thing to test him, and guess what? He says he can’t take it today. All of this wouldn’t be so bad if the dude just wasn’t an awful “roommate”. My house has two bathrooms. My mom has her own, and I’m sharing the one I typically use with him. That bathroom has never been more disgusting than today. There’s dirt stains in the shower, toothpicks and q-tips on the ground, he’s just blatantly stolen several things from my shaving box in the bathroom cabinet and I haven’t seen them since. I can’t use my mom’s bathroom because she locks her bedroom every day before she leaves because she’s afraid of him stealing something. One of the prerequisites she gave him to staying here was that he needed a job. It’s been almost a month, and nothing. Me, her, and even my grandmother agree that him being here just isn’t a good idea anymore and I keep telling my mom that if she hates it as much as I do, just kick him out. She always says “where’s he supposed to go?” And I said “It’s not our problem where he goes.” I understand I’m harsh because in total it’s been like half a year with this shit in total, but am I in the wrong? And if so, why? Thank you.')]
+    with open(output_fpath, "w", encoding="utf-8") as f:
+        f.write("=== QUERY ===\n")
+        f.write(query + "\n\n")
+        f.write("=== RESULTS ===\n")
 
+        for i, doc in enumerate(results, 1):
+            title = doc.metadata.get("title", "N/A")
+            score = doc.metadata.get("score", "N/A")
+            post_id = doc.metadata.get("post_id", "N/A")
+            url = doc.metadata.get("url", "N/A")
 
-"""
+            f.write(f"\n--- Result {i} ---\n")
+            f.write(f"Title: {title}\n")
+            f.write(f"Score: {score}\n")
+            f.write(f"Post ID: {post_id}\n")
+            f.write(f"URL: {url}\n\n")
+            import textwrap
+            content = doc.page_content
+            wrapped_content = textwrap.fill(content, width=80)
+            f.write(wrapped_content)
+            
+            if len(doc.page_content) > 1000:
+                f.write("\n\n[...content truncated...]")
+            
+            f.write("\n\n")
+            f.write("\n\n" + "=" * 80 + "\n\n")
+
+    print(f"Query and results saved to {output_fpath}")
