@@ -8,6 +8,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 import pandas as pd
 import datetime
+import textwrap
 
 
 class VectorDB:
@@ -88,26 +89,18 @@ class VectorDB:
 
 if __name__ == "__main__":
     vdb = VectorDB(json_doc_fpath="../data/aita_posts.json")
-    
-    query = """My boyfriend and I went to get pedicures together, something we rarely do and I thought would be a nice, 
-    low-key couples activity. He finished before me, and I still had about 25–30 minutes left. Instead of waiting and 
-    relaxing, he suddenly said it felt too hot inside and announced that he was going to walk home to "get some exercise," 
-    since his doctor told him to move more. For context, it wasn't hot outside at all, it was around 70° and really pleasant. 
-    He kept asking if I was okay with him leaving, which made it feel even stranger, like he was waiting for permission to 
-    do something he already knew I'd find odd. I told him it was his choice, but I didn't really understand why he couldn't 
-    just wait. He ended up walking home, which took about 23 minutes. The whole thing felt off, though, mostly because that 
-    just so happened to line up exactly with the time his Discord group (which includes one particular female friend he always 
-    seems eager to talk to) usually gets online. I just found it inconsiderate. We went together, it was supposed to be 
-    something shared, and he couldn't stay 25 more minutes until I was done?"""
 
+    query="""Me (21F) and my friends, who I’ll call “Muriel” (22F) and “Lisbon” (21F), took an Uber to go out this weekend.  As soon as we got in the car, our Uber driver (late 30s) launched into a tirade about how his life is basically falling apart. For half an hour, he used us as a captive audience to rant about his marital and career failures. He bragged that he was making $200K in tech previously, but got laid off, and now his wife wants to leave him. Then he starting kicking off about his wife and “how could she abandon him for no reason in his time of need after 15 years of marriage” and saying she’s going to take their kids. He said he’s only going to be an Uber driver for a short time to network and get back into tech, and because of “interesting conversations like these.”  The conversation turned to us girls, and he started interrogating us about our majors and how old we are. He said he studied computer science back in the day. Muriel told him she’s majoring in history, and he remarked “ok, so just put the fries in the bag.” I said I’m majoring in women, gender, and sexuality. He interrupts me saying “another worthless major.” So that was the end of civility.  I said there’s no such thing as a worthless major, as the point is to learn critical thinking, and my major is actually one of the most important ones, since the oppression of women is one of society’s greatest problems that must be solved. And I said “maybe if you had taken a course in women, gender, and sexuality in college, your wife wouldn’t be leaving you.”  He said I don’t know anything about the real world, and I’ll never get a job outside of fast food. I told him the fact that I already got a six-figure return offer from a fast-growing tech startup, which I secured no problem through networking with my sorority alums. Muriel interjected that she also has a return offer with a top investment bank to which our college is a feeder.   I commented that it seems like the only person who doesn’t know anything about the world is him, and maybe he’d have a decent job still if he didn’t pick a useless major like CS.  We reached the event venue at this point, and he told us to “get the hell out of his car.” I sarcastically wished him luck with his divorce.  Lisbon, who’s not confrontational and was quiet most of the ride, said Muriel and I were “so aggro for no reason” and embarrassed her because we can’t take a joke. And that now her Uber rating will go down. In my opinion, she’s a bit of a STEM supremacist as well and likely sympathized with him as a fellow CS major. I think she’s also somewhat bitter that she never got a return offer from her summer internship in tech, so she’s perfectly fine with her humanities friends being disrespected to feel better about herself.  The whole exchange lowkey ruined our night out."""
+    
     results = vdb.query(query, k=5)
 
     # Create a timestamped filename
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_fpath = f"/results/query_results_{timestamp}.txt"
+    output_fpath = f"results/query_results_{timestamp}.txt"
 
     with open(output_fpath, "w", encoding="utf-8") as f:
         f.write("=== QUERY ===\n")
+        query = textwrap.fill(query, width=80)
         f.write(query + "\n\n")
         f.write("=== RESULTS ===\n")
 
@@ -122,7 +115,7 @@ if __name__ == "__main__":
             f.write(f"Score: {score}\n")
             f.write(f"Post ID: {post_id}\n")
             f.write(f"URL: {url}\n\n")
-            import textwrap
+            
             content = doc.page_content
             wrapped_content = textwrap.fill(content, width=80)
             f.write(wrapped_content)
