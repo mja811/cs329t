@@ -1,12 +1,12 @@
+import json
 import os
 
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-from langchain_experimental.utilities import PythonREPL
 
 import pandas as pd
 
-PROCESSED_COMMENTS_DIR = "../../out/processed_comments/"
+from config import PROCESSED_COMMENTS_DIR, DATA_DIR
 
 # https://www.reddit.com/r/AITAH/comments/1ecylvt/what_do_each_of_the_acronyms_here_mean/
 AITA_RESULT_ACRONYMS = {
@@ -35,10 +35,8 @@ def get_results(df):
 
 
 def create_comment_prompt(post_dict, post_comments_df):
-    post_id = post_dict["post_id"]
     post_title = post_dict["title"]
     post_text = post_dict["selftext"]
-    out_path = get_csv_file_path(post_id)
     categories = "\n".join([k + ": " + v for k,v in AITA_RESULT_ACRONYMS.items()])
 
     prompt = f"""Your job as an agent is to classify the comments for an Am I The Asshole Post into categories, based on the comment text in relation to the post content. For each comment, classify the comment as one of the following categories:
@@ -75,53 +73,60 @@ Return a list of the acronyms in the same order as they are presented in the tab
 Double check that there is a result for each row, so that the final results list should be the same length as the table rows.
 Respond **only** with the list of acronyms, no extra text.
 """
-    print(prompt)
     return HumanMessage(content=prompt)
 
-def run_comment_processing_node(post_dict, agent_str="gpt-4o-mini"):
+def run_comment_processing_node(post_dict, log_dir=None, use_saved_results=True, agent_str="gpt-4o-mini"):
     post_id = post_dict["post_id"]
 
     # Check if post has already been processed. If so, load saved results.
     result_fp = get_csv_file_path(post_id)
-    if os.path.exists(result_fp):
+    if use_saved_results and os.path.exists(result_fp):
         df = pd.read_csv(result_fp)
-        return get_results(df)
+        result_df = df
+    else:
+        df = pd.read_csv(DATA_DIR / "aita_comments.csv")
+        post_comments_df = df[df["post_id"] == post_dict["post_id"]]
+        if post_comments_df.empty:
+            return {}
+        post_comments_df.reset_index(drop=True, inplace=True)
+        # post_comments_df.index = post_comments_df.index + 1
 
-    df = pd.read_csv("../../data/aita_comments.csv")
-    post_comments_df = df[df["post_id"] == post_dict["post_id"]]
-    if post_comments_df.empty:
-        return {}
-    post_comments_df.reset_index(drop=True, inplace=True)
-    # post_comments_df.index = post_comments_df.index + 1
+        prompt = create_comment_prompt(post_dict, post_comments_df)
+        llm = ChatOpenAI(model=agent_str)
+        llm_reply = llm.invoke([prompt])
+        print(llm_reply)
 
-    prompt = create_comment_prompt(post_dict, post_comments_df)
-    llm = ChatOpenAI(model=agent_str)
-    llm_reply = llm.invoke([prompt])
-    print(llm_reply)
+        cleaned_results = []
+        try:
+            content_str = (
+                llm_reply.content
+                if isinstance(llm_reply.content, str)
+                else str(llm_reply.content)
+            )
+            parsed = content_str.split("[")[-1].split("]")[0]
+            results = parsed.split(",")
+            for r in results:
+                rstrip = r.strip()
+                for a in AITA_RESULT_ACRONYMS.keys():
+                    if a in rstrip:
+                        cleaned_results.append(a)
+        except Exception as exc:
+            raise ValueError(
+                f"Invalid response:\n{llm_reply.content}"
+            ) from exc
 
-    cleaned_results = []
-    try:
-        content_str = (
-            llm_reply.content
-            if isinstance(llm_reply.content, str)
-            else str(llm_reply.content)
-        )
-        parsed = content_str.split("[")[-1].split("]")[0]
-        results = parsed.split(",")
-        for r in results:
-            rstrip = r.strip()
-            for a in AITA_RESULT_ACRONYMS.keys():
-                if a in rstrip:
-                    cleaned_results.append(a)
-    except Exception as exc:
-        raise ValueError(
-            f"Invalid response:\n{llm_reply.content}"
-        ) from exc
+        assert len(cleaned_results) == len(post_comments_df), f"Response length mismatch: {len(cleaned_results)} vs. {len(post_comments_df)}; {cleaned_results}"
+        post_comments_df["result"] = cleaned_results
+        post_comments_df.to_csv(result_fp, index=False)
+        result_df = post_comments_df
 
-    assert len(cleaned_results) == len(post_comments_df), f"Response length mismatch: {len(cleaned_results)} vs. {len(post_comments_df)}; {cleaned_results}"
-    post_comments_df["result"] = cleaned_results
-    post_comments_df.to_csv(result_fp, index=False)
-    return get_results(post_comments_df)
+    results = get_results(result_df)
+    results.update(post_dict)
+
+    if log_dir:
+        with open(log_dir / f"{post_id}.json", "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2)
+    return results
 
 if __name__ == '__main__':
     for post in [
