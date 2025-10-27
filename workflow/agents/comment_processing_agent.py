@@ -75,7 +75,7 @@ Respond **only** with the list of acronyms, no extra text.
 """
     return HumanMessage(content=prompt)
 
-def run_comment_processing_node(post_dict, log_dir=None, use_saved_results=True, agent_str="gpt-4o-mini"):
+def process_single_post_comments(post_dict, log_dir=None, use_saved_results=True, agent_str="gpt-4o-mini"):
     post_id = post_dict["post_id"]
 
     # Check if post has already been processed. If so, load saved results.
@@ -127,6 +127,17 @@ def run_comment_processing_node(post_dict, log_dir=None, use_saved_results=True,
         with open(log_dir / f"{post_id}.json", "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
     return results
+
+
+def run_comment_processing_node(posts_list, log_dir=None, use_saved_results=True, agent_str="gpt-4o-mini"):
+    sorted_comments_data = []
+    for post in posts_list:
+        try:
+            sorted_comments_data.append(process_single_post_comments(post, log_dir, use_saved_results, agent_str))
+        except Exception as e:
+            print(e)
+    return sorted_comments_data
+
 
 if __name__ == '__main__':
     for post in [
