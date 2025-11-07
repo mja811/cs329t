@@ -16,13 +16,14 @@ Return the advice as a bulleted list and cite the number of the advice comment r
 def run_advice_node(comments, verdict, mod_summary):
     all_verdict_comments = []
     for comment in comments:
-        all_verdict_comments.extend(comment[verdict])
+        if verdict in comment:
+            all_verdict_comments.extend(comment[verdict])
     comments_formatted = "\n".join([f"{i}. {c}" for i, c in enumerate(all_verdict_comments)])
     prompt = create_advice_prompt(comments_formatted, mod_summary)
     llm = ChatOpenAI(model="gpt-4o-mini")
     llm_reply = llm.invoke([prompt])
-    print(llm_reply.content)
-    return llm_reply
+    print("ADVICE:", llm_reply.content)
+    return llm_reply.content
 
 
 if __name__ == '__main__':

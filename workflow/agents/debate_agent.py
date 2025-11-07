@@ -5,25 +5,21 @@ from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
 from langchain.memory import ConversationBufferMemory
 
-from config import RUN_LOGS
+from config import RUN_LOGS, log_to_file
 
-
-def log_to_file(path, text):
-    """Append debate text to transcript file."""
-    with open(path, "a", encoding="utf-8") as f:
-        query = textwrap.fill(text, width=80)
-        f.write(query + "\n\n")
 
 def debate_turn(comments, log_path, post_json, turn_num, yta_agent, nta_agent, mod_agent, memory_buffer):
     print(f"\n--- Turn {turn_num} ---")
     topic = post_json["selftext"]
     all_yta_comments = []
     for comment in comments:
-        all_yta_comments.extend(comment['YTA'])
+        if 'YTA' in comment:
+            all_yta_comments.extend(comment['YTA'])
     yta_comments_formatted = "\n".join([f"{i+1}. {c}" for i, c in enumerate(all_yta_comments)])
     all_nta_comments = []
     for comment in comments:
-        all_nta_comments.extend(comment['NTA'])
+        if 'NTA' in comment:
+            all_nta_comments.extend(comment['NTA'])
     nta_comments_formatted = "\n".join([f"{i+1}. {c}" for i, c in enumerate(all_nta_comments)])
 
     if turn_num == 0:
@@ -59,9 +55,9 @@ def run_debate_agent_node(comments, logdir, post_json):
     text = post_json["selftext"]
     log_to_file(log_path, f"--- AI Debate Transcript ---\nTopic: {text}\n")
 
-    yta_agent = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
-    nta_agent = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
-    mod_agent = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
+    yta_agent = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+    nta_agent = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+    mod_agent = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
 
     memory_buffer= ConversationBufferMemory(return_messages=True)
 
@@ -70,13 +66,21 @@ def run_debate_agent_node(comments, logdir, post_json):
 
     moderator_summary = mod_agent([
         HumanMessage(
-            content=f"Read the debate: {memory_buffer.chat_memory}. Now summarize the arguments from YTA and NTA, and determine who won and why.")
+            content=f"Read the debate: {memory_buffer.chat_memory}. Now summarize the arguments from YTA and NTA, and determine who won and why. Finally, conclude the response with the final winner, in the format 'Winner: NTA' or 'Winner: YTA' respectively depending on who won.")
     ])
     mod_output = f"Moderator Summary: {moderator_summary.content}"
     print(mod_output)
     log_to_file(log_path, mod_output)
 
-    return moderator_summary
+    winner_str = mod_output.lower().split(": ")[1][:10]
+    if "yta" in winner_str.lower():
+        winner = "YTA"
+    elif "nta" in winner_str.lower():
+        winner = "NTA"
+    else:
+        winner = winner_str.strip()
+
+    return moderator_summary, winner
 
 if __name__ == '__main__':
     # post_json = {
