@@ -1,25 +1,39 @@
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
+from langchain_tavily import TavilySearch
 
-def create_advice_prompt(comments_formatted, mod_summary):
+def create_advice_prompt(examples_formatted, mod_summary):
+    comment_text = ""
+    cite_text = ""
+    if examples_formatted:
+        comment_text = f"""Based on the summary result, your job is to recommend some advice steps. Here are some examples of previous comments that contain advice for similar situations:
+    {examples_formatted}"""
+        cite_text = "and cite the number of the advice comment referenced for creating that advice using bracketed format"
     prompt = f"""You are the advice agent. Read the following summary of an argument with two sides and a clear winner:
 {mod_summary} 
-Based on the summary result, your job is to recommend some advice steps. Here are some examples of previous comments that contain advice for similar situations:
-{comments_formatted}
-Return the advice as a bulleted list and cite the number of the advice comment referenced for creating that advice using bracketed format.
+{comment_text}
+Return the advice as a bulleted list{cite_text}.
 """
     print(prompt)
     return HumanMessage(content=prompt)
 
+def run_tavily(query):
+    tavily_tool = TavilySearch(max_results=5)
+    out = tavily_tool.invoke(
+        f"Give advice on how to handle this situation: {query}")[
+        "results"]
+    return out
 
 def run_advice_node(comments, verdict, mod_summary):
     all_verdict_comments = []
     for comment in comments:
         if verdict in comment:
             all_verdict_comments.extend(comment[verdict])
-    comments_formatted = "\n".join([f"{i}. {c}" for i, c in enumerate(all_verdict_comments)])
-    prompt = create_advice_prompt(comments_formatted, mod_summary)
+    examples_formatted = []
+    # examples_formatted = "\n".join([f"{i}. {c}" for i, c in enumerate(all_verdict_comments)])
+    # examples_formatted = run_tavily(query)
+    prompt = create_advice_prompt(examples_formatted, mod_summary)
     llm = ChatOpenAI(model="gpt-4o-mini")
     llm_reply = llm.invoke([prompt])
     print("ADVICE:", llm_reply.content)

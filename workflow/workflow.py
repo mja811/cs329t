@@ -15,7 +15,7 @@ def run_workflow(run_name, post_query_json):
     vdb_results = run_vectordb_node(post_query_json, log_dir)
     sorted_comments_data = run_comment_processing_node(vdb_results, comments_dir)
     # sorted_comments_data = []
-    mod_summary, verdict = run_debate_agent_node(sorted_comments_data, debate_dir, post_query_json)
+    mod_summary, verdict, pct = run_debate_agent_node(sorted_comments_data, debate_dir, post_query_json)
     advice = run_advice_node(sorted_comments_data, verdict, mod_summary)
     print(advice)
 
