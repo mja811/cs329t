@@ -3,6 +3,7 @@ from vector_db import *
 from agents.comment_processing_agent import run_comment_processing_node
 from agents.advice_agent import run_advice_node
 from agents.debate_agent import run_debate_agent_node
+from workflow.agents.gpa_agent import run_eval_agent
 
 
 def run_workflow(run_name, post_query_json):
@@ -12,15 +13,23 @@ def run_workflow(run_name, post_query_json):
     debate_dir = log_dir / "debate/"
     os.makedirs(debate_dir, exist_ok=True)
 
-    vdb_results = run_vectordb_node(post_query_json, log_dir)
-    sorted_comments_data = run_comment_processing_node(vdb_results, comments_dir)
-    # sorted_comments_data = []
-    mod_summary, verdict, pct = run_debate_agent_node(sorted_comments_data, debate_dir, post_query_json)
-    advice = run_advice_node(sorted_comments_data, verdict, mod_summary)
+    # vdb_results = run_vectordb_node(post_query_json, log_dir)
+    # sorted_comments_data = run_comment_processing_node(vdb_results, comments_dir)
+    sorted_comments_data = []
+    opposite_text, mod_summary, verdict_short, verdict_pct, verdict, debate = run_debate_agent_node(sorted_comments_data, debate_dir, post_query_json)
+
+    debate_CR = run_eval_agent(debate, post_query_json["selftext"] + "\n\n" + opposite_text)  # context relevance
+    verdict_G = run_eval_agent(verdict, debate)  # groundedness
+
+    advice = run_advice_node(sorted_comments_data, verdict_short, mod_summary)
+    advice_AR = run_eval_agent(advice, post_query_json["selftext"], "answer relevance")  # ar
+    advice_G = run_eval_agent(advice, post_query_json["selftext"], )
     print(advice)
 
     fp = debate_dir / f"debate_transcript_{post_query_json['post_id']}.txt"
     log_to_file(fp, advice)
+
+    return verdict_short, opposite_text, debate, debate_CR, verdict, verdict_pct, verdict_G, advice, advice_AR, advice_G
 
 if __name__ == '__main__':
     run_name = "test_full"

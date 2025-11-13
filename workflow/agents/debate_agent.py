@@ -6,12 +6,14 @@ from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage
 from langchain.memory import ConversationBufferMemory
 
-from config import RUN_LOGS, log_to_file
+from config import RUN_LOGS, log_to_file, OPPOSING_TEXTS
+from workflow.agents.gpa_agent import run_eval_agent
 
 
 def debate_turn(comments, log_path, post_json, turn_num, yta_agent, nta_agent, mod_agent, memory_buffer):
     print(f"\n--- Turn {turn_num} ---")
 
+    opposite_side_text = ""
     if turn_num == 0:
         text = post_json["selftext"]
         title = post_json["title"]
@@ -26,7 +28,7 @@ def debate_turn(comments, log_path, post_json, turn_num, yta_agent, nta_agent, m
                 all_nta_comments.extend(comment['NTA'])
         nta_comments_formatted = "\n".join([f"{i + 1}. {c}" for i, c in enumerate(all_nta_comments)])
 
-        opposite_side_text = generate_opposing_side(text)
+        opposite_side_text = generate_opposing_side(text, post_id=post_json["post_id"])
         log_to_file(log_path, "Opposing side: " + opposite_side_text)
         yta_prompt = f"""The topic for today's debate is: {title}.\n\n
 Here is the perspective from the original poster: {text}
@@ -37,24 +39,35 @@ You are the YTA debater. Argue that the original poster is at fault. Respond con
     else:
         yta_prompt = "You are the YTA debater and your role is to show that the author of the original post is at fault. Refute the last NTA's argument in the debate context and create one new concise argument for the author being at fault." # that cites from at least one similar YTA comment in the examples. Cite using the example comment number in brackets."
     yta_reply = yta_agent([HumanMessage(content=yta_prompt)] + memory_buffer.chat_memory.messages)
-    memory_buffer.chat_memory.add_message(AIMessage(content=f"YTA says: {yta_reply.content}"))
-    yta_output = f"YTA: {yta_reply.content}"
+    memory_buffer.chat_memory.add_message(AIMessage(content=f"{yta_reply.content}"))
+    yta_output = f"{yta_reply.content}"
     print(yta_output)
     log_to_file(log_path, yta_output)
 
     nta_prompt = "You are the NTA debater and your role is to show that the original poster is not at fault. Refute the last YTA's argument in the debate context and create one new concise argument for the author not being at fault." # that cites from at least one similar NTA comment in the examples. Cite using the example comment number in brackets."
     nta_reply = nta_agent([HumanMessage(content=nta_prompt)] + memory_buffer.chat_memory.messages)
-    memory_buffer.chat_memory.add_message(AIMessage(content=f"NTA says: {nta_reply.content}"))
-    nta_output = f"NTA: {nta_reply.content}"
+    memory_buffer.chat_memory.add_message(AIMessage(content=f"{nta_reply.content}"))
+    nta_output = f"{nta_reply.content}"
     print(nta_output)
     log_to_file(log_path, nta_output)
 
+    return yta_output, nta_output, opposite_side_text
 
-def generate_opposing_side(text):
+
+def generate_opposing_side(text, post_id):
+    f = os.path.join(OPPOSING_TEXTS, f"{post_id}.csv")
+    if os.path.exists(f):
+        with open(f, "r") as ftext:
+            return ftext.read()
+
     llm = ChatOpenAI(model="gpt-5")
     prompt = f"""Write a version of the story retold from the opposing perspective, of a similar length and text style. In the story, justify why the original poster is at fault in this situation: {text}"""
     llm_reply = llm.invoke([HumanMessage(content=prompt)])
     print(llm_reply.content)
+
+    with open(f, "w") as ftext:
+        ftext.write(llm_reply.content)
+
     return llm_reply.content
 #     return """I’m a single mom to a wonderful 12-year-old girl, Olivia, who has level-2 autism. I’ve been her primary caregiver her entire life. Her dad and I share custody — he has her every other weekend and one weekday — but I’m the one who manages most of her routines, therapies, appointments, and day-to-day structure.
 #
@@ -82,8 +95,12 @@ def run_debate_agent_node(comments, logdir, post_json):
 
     memory_buffer= ConversationBufferMemory(return_messages=True)
 
+    debate_all = ""
+    opposite_side_text = ""
     for i in range(5):
-        debate_turn(comments, log_path, post_json, i, yta_agent, nta_agent, mod_agent, memory_buffer)
+        yta, nta, other_side = debate_turn(comments, log_path, post_json, i, yta_agent, nta_agent, mod_agent, memory_buffer)
+        debate_all += yta + "\n\n" + nta
+        opposite_side_text += other_side
 
     moderator_summary = mod_agent([
         HumanMessage(
@@ -120,7 +137,7 @@ Output format:
     percent_fault = re.findall(r"\d+%", mod_output)[0]
     print(percent_fault)
 
-    return moderator_summary, winner, percent_fault
+    return opposite_side_text, moderator_summary, winner, percent_fault, moderator_summary.content, debate_all
 
 if __name__ == '__main__':
     post_json = {
