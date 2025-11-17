@@ -24,9 +24,9 @@ Scoring Guide:
                  }
 
 OUT_PROMPT = """Output only a single-line JSON object with exactly these keys:
+"score"                – score between 1 - 5
 "criteria"             – one concise sentence that states your rationale with reference to the rubric
 "supporting_evidence"  – An explanation of why you scored the way you did using exact words or evidence from the response
-"score"                – score between 1 - 5
 """
 
 def run_eval_agent(output, output_context, type="groundedness"):
@@ -36,7 +36,8 @@ def run_eval_agent(output, output_context, type="groundedness"):
     llm = ChatOpenAI(model="gpt-4o-mini")
     llm_reply = llm.invoke([prompt])
     print(llm_reply.content)
-    return json.loads(llm_reply.content)
+    clean_content = "{" + llm_reply.content.split("{")[1].split("}")[0] + "}"
+    return json.loads(clean_content)
 
 if __name__ == '__main__':
     output_context = """My mom has this unshakeable belief that I

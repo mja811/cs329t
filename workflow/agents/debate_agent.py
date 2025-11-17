@@ -28,11 +28,10 @@ def debate_turn(comments, log_path, post_json, turn_num, yta_agent, nta_agent, m
                 all_nta_comments.extend(comment['NTA'])
         nta_comments_formatted = "\n".join([f"{i + 1}. {c}" for i, c in enumerate(all_nta_comments)])
 
-        opposite_side_text = generate_opposing_side(text, post_id=post_json["post_id"])
+        opposite_side_text = "" #generate_opposing_side(text, post_id=post_json["post_id"]) Here is the opposing perspective: {opposite_side_text}
         log_to_file(log_path, "Opposing side: " + opposite_side_text)
         yta_prompt = f"""The topic for today's debate is: {title}.\n\n
 Here is the perspective from the original poster: {text}
-Here is the opposing perspective: {opposite_side_text}
 
 You are the YTA debater. Argue that the original poster is at fault. Respond concisely with a single argument only.
 """
@@ -104,27 +103,30 @@ def run_debate_agent_node(comments, logdir, post_json):
 
     moderator_summary = mod_agent([
         HumanMessage(
-            content=f"""Read the debate: {memory_buffer.chat_memory}. 
-You are the Judge in an AITA-style debate.
-Two agents have argued opposite sides:
-- The YTA Advocate argues that the OP behaved unfairly, inconsiderately, or caused harm.
-- The NTA Advocate argues that the OP was justified or reasonable.
-Your job is to decide which argument is morally stronger, not which one sounds more polite or understanding.
-Evaluation criteria (weigh equally):
-1. Moral accountability: Who better recognized and addressed the real harm done?
-2. Fairness of reasoning: Who showed a balanced, fact-based view of the situation?
-3. Empathy and moral clarity: Who combined understanding with responsibility?
-Important:
-- Good intentions do not cancel out harmful actions.
-- You should side with YTA when OP’s behavior clearly violated fairness, empathy, or respect — even if OP meant well.
-- You should side with NTA only when OP’s behavior was justified and proportionate.
-Output format:
-- Winner: [YTA or NTA]
-- Strength: [e.g., 70% vs 30%]
-- Reasoning: [Short explanation of why one side’s moral argument was stronger.]""")])
-    mod_output = f"Moderator Summary: {moderator_summary.content}"
-    print(mod_output)
-    log_to_file(log_path, mod_output)
+#             content=f"""Read the debate: {memory_buffer.chat_memory}.
+# You are the Judge in an AITA-style debate.
+# Two agents have argued opposite sides:
+# - The YTA Advocate argues that the OP behaved unfairly, inconsiderately, or caused harm.
+# - The NTA Advocate argues that the OP was justified or reasonable.
+# Your job is to decide which argument is morally stronger, not which one sounds more polite or understanding.
+# Evaluation criteria (weigh equally):
+# 1. Moral accountability: Who better recognized and addressed the real harm done?
+# 2. Fairness of reasoning: Who showed a balanced, fact-based view of the situation?
+# 3. Empathy and moral clarity: Who combined understanding with responsibility?
+# Important:
+# - Good intentions do not cancel out harmful actions.
+# - You should side with YTA when OP’s behavior clearly violated fairness, empathy, or respect — even if OP meant well.
+# - You should side with NTA only when OP’s behavior was justified and proportionate.
+# Output format:
+# - Winner: [YTA or NTA]
+# - Strength: [e.g., 70% vs 30%]
+# - Reasoning: [Short explanation of why one side’s moral argument was stronger.]""")])
+            content=f"Read the debate: {memory_buffer.chat_memory}. Now summarize the arguments from YTA and NTA, and determine who won and why. Finally, conclude the response with the final winner, in the format 'Winner: NTA' or 'Winner: YTA' respectively depending on who won.")
+        ])
+    mod_output = moderator_summary.content
+    mod_output_print = f"Moderator Summary: {moderator_summary.content}"
+    print(mod_output_print)
+    log_to_file(log_path, mod_output_print)
 
     winner_str = mod_output.lower().split(": ")[1][:10]
     if "yta" in winner_str.lower():
@@ -134,7 +136,7 @@ Output format:
     else:
         winner = winner_str.strip()
 
-    percent_fault = re.findall(r"\d+%", mod_output)[0]
+    percent_fault = 0 #re.findall(r"\d+%", mod_output)[0]
     print(percent_fault)
 
     return opposite_side_text, moderator_summary, winner, percent_fault, moderator_summary.content, debate_all

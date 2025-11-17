@@ -15,7 +15,7 @@ def create_advice_prompt(examples_formatted, mod_summary):
 {comment_text}
 Return the advice as a bulleted list{cite_text}.
 """
-    print(prompt)
+    # print(prompt)
     return HumanMessage(content=prompt)
 
 def run_tavily(query):

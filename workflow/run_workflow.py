@@ -6,7 +6,7 @@ from agents.debate_agent import run_debate_agent_node
 from workflow.agents.gpa_agent import run_eval_agent
 
 
-def run_workflow(run_name, post_query_json):
+def run_workflow_func(run_name, post_query_json):
     log_dir = RUN_LOGS / run_name
     comments_dir = log_dir / "comments/"
     os.makedirs(comments_dir, exist_ok=True)
@@ -24,7 +24,6 @@ def run_workflow(run_name, post_query_json):
     advice = run_advice_node(sorted_comments_data, verdict_short, mod_summary)
     advice_AR = run_eval_agent(advice, post_query_json["selftext"], "answer relevance")  # ar
     advice_G = run_eval_agent(advice, post_query_json["selftext"], )
-    print(advice)
 
     fp = debate_dir / f"debate_transcript_{post_query_json['post_id']}.txt"
     log_to_file(fp, advice)
