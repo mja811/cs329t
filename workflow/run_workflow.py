@@ -13,12 +13,12 @@ def run_workflow_func(run_name, post_query_json):
     debate_dir = log_dir / "debate/"
     os.makedirs(debate_dir, exist_ok=True)
 
-    # vdb_results = run_vectordb_node(post_query_json, log_dir)
-    # sorted_comments_data = run_comment_processing_node(vdb_results, comments_dir)
-    sorted_comments_data = []
-    opposite_text, mod_summary, verdict_short, verdict_pct, verdict, debate = run_debate_agent_node(sorted_comments_data, debate_dir, post_query_json)
+    vdb_results = run_vectordb_node(post_query_json, log_dir)
+    sorted_comments_data = run_comment_processing_node(vdb_results, comments_dir)
+    # sorted_comments_data = []
+    opposite_text, mod_summary, verdict_short, verdict_pct, verdict, debate = run_debate_agent_node(sorted_comments_data, debate_dir, post_query_json, vdb_results)
 
-    debate_CR = run_eval_agent(debate, post_query_json["selftext"] + "\n\n" + opposite_text)  # context relevance
+    debate_CR = run_eval_agent(debate, post_query_json["selftext"] + "\n\n" + opposite_text, "context relevance")  # context relevance
     verdict_G = run_eval_agent(verdict, debate)  # groundedness
 
     advice = run_advice_node(sorted_comments_data, verdict_short, mod_summary)
@@ -102,4 +102,4 @@ if __name__ == '__main__':
     "ups": 7633,
     "score": 7633
     }
-    run_workflow(run_name, post_query_json)
+    run_workflow_func(run_name, post_query_json)

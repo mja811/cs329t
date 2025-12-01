@@ -7,6 +7,7 @@ from langchain.schema import HumanMessage, AIMessage
 from langchain.memory import ConversationBufferMemory
 
 from config import RUN_LOGS, log_to_file, OPPOSING_TEXTS
+from workflow.agents.comment_processing_agent import AITA_RESULT_ACRONYMS
 from workflow.agents.gpa_agent import run_eval_agent
 
 
@@ -82,7 +83,38 @@ def generate_opposing_side(text, post_id):
 #
 # I’m not angry that she was hurt by my lie; I accept responsibility for that and I’m ready to help her work through it with her therapist. But her dad refusing to return her — effectively cutting me off — is escalating the situation and reinforcing her distrust. The longer she stays away, the harder it becomes to rebuild her sense of security with me."""
 
-def run_debate_agent_node(comments, logdir, post_json):
+def get_moderator_prompt(memory_buffer, comments, posts):
+    default_str = f"Read the debate.\n\nDEBATE: {memory_buffer.chat_memory}. "
+    default_end_str = f"""Now summarize the arguments from YTA and NTA from the debate, and determine who won and why. Finally, conclude the response with the final winner, in the format 'Winner: NTA' or 'Winner: YTA' respectively depending on who won."""
+# Output format:
+# - Winner: [YTA or NTA]
+# - Strength: [e.g., XX% vs YY%]
+# - Reasoning: [Short explanation of why one side’s moral argument was stronger.]"""
+
+    if not comments:
+        return default_str + default_end_str
+
+    has_content = False
+    post_pct_string = ""
+    for post_id, post_comments_dict in comments.items():
+        total_len = sum([len(post_comments_dict[item]) for item in (post_comments_dict.keys() & AITA_RESULT_ACRONYMS.keys())])
+        if total_len == 0:
+            continue
+        yta_percent = 100 * (len(post_comments_dict.get("YTA", [])) + len(post_comments_dict.get("ESH", []))) / total_len
+        chosen_post = None
+        for post in posts:
+            if post["post_id"] == post_id:
+                chosen_post = post
+                break
+        if not chosen_post:
+            continue
+        has_content = True
+        post_pct_string += (f"POST: {chosen_post["selftext"]}\nPERCENTAGE YTA: {yta_percent:.2f}%\nPERCENTAGE NTA: {100-yta_percent:.2f}%\n\n")
+    if not has_content:
+        return default_str + default_end_str
+    return default_str + "Here are some examples of similar posts with their corresponding YTA and NTA percentages. Based on the debate, the similar posts, and the distributions of YTA/NTA, determine the verdict and corresponding percentage.\n\n\n" + post_pct_string + default_end_str
+
+def run_debate_agent_node(comments, logdir, post_json, vdb_posts):
     log_path = logdir / f"debate_transcript_{post_json['post_id']}.txt"
     open(log_path, "w", encoding="utf-8").close()
     text = post_json["selftext"]
@@ -121,14 +153,15 @@ def run_debate_agent_node(comments, logdir, post_json):
 # - Winner: [YTA or NTA]
 # - Strength: [e.g., 70% vs 30%]
 # - Reasoning: [Short explanation of why one side’s moral argument was stronger.]""")])
-            content=f"Read the debate: {memory_buffer.chat_memory}. Now summarize the arguments from YTA and NTA, and determine who won and why. Finally, conclude the response with the final winner, in the format 'Winner: NTA' or 'Winner: YTA' respectively depending on who won.")
-        ])
+            content=get_moderator_prompt(memory_buffer, comments, vdb_posts)
+        )
+    ])
     mod_output = moderator_summary.content
     mod_output_print = f"Moderator Summary: {moderator_summary.content}"
     print(mod_output_print)
     log_to_file(log_path, mod_output_print)
 
-    winner_str = mod_output.lower().split(": ")[1][:10]
+    winner_str = mod_output.lower().split("winner: ")[1][:10]
     if "yta" in winner_str.lower():
         winner = "YTA"
     elif "nta" in winner_str.lower():
@@ -143,7 +176,7 @@ def run_debate_agent_node(comments, logdir, post_json):
 
 if __name__ == '__main__':
     post_json = {
-        "post_id": "abc2_new",
+        "post_id": "abc2_new_postcomments",
         "title": "AITA For Not Wanting to Join a College Sorority Out of Spite",
         "selftext": "My mom has this unshakeable belief that I have no friends, and I would rather be cooped up in my room doing school work and hobbies. She thinks that if I join a sorority, I’ll make some lasting friendships and it’ll solve all of my “problems.” She was in a sorority herself, so her logic is “since I had a good experience, Red will too.”  Originally, I wasn’t really bothered by her pressuring. My college does deferred rush, meaning that the rushing for sororities happens in the spring and not the fall. That way, we get time to go to sorority events and get to know the houses. I thought, “ok, I’ll hear her out and try the events to see if I like it.”  I ultimately ended up feeling that the experience was not for me, and I have expressed this numerous times to my mom. Every time I express this, she thinks up some excuse to dispel my argument like “you have a preconceived notion about the girls in it” or “you just haven’t done enough.” It doesn’t matter how I think or feel, she must find a way to discount it.  It’s gotten to the point where just because I won’t commit to a sorority, I am “making her depressed.” I have experienced so many arguments, yelling, and tears and just “this is hurting me!” It’s become all about herself. Doing well in classes? It doesn’t matter; I’m not doing enough for sororities. I joined this cool club? A club is nothing; sororities are better. If I go home she wants to strike up a conversation about sororities, nothing else. It feels like all of my value here in college comes down to this one thing. It’s making me feel trapped and it’s degrading on my mental health.  She’s even gone the extra mile to share my Instagram with people I don’t know, and give my phone number to another person, whom I also don’t know. I’m not on social media a lot, so this made me very uncomfortable.  I had a professor notice the shift in my mood, so she asked me what was troubling me and I explained this to her. Everyone, including her, that I have explained my situation to has said something along the lines of “it’s not for everyone, it’s ok if you don’t want to do it.” Even my dad encourages me to do what I want. It is only her.  I’ve reached my limit, and I’m at the point where, come this spring, I’m considering not even rushing, not just because I don’t like it, but out of spite. If she wants to make me feel bad about myself because I won’t join a sorority, fine;  I’ll make sure she knows that type of behavior will not get me to do it. It saddens me because what could’ve been this fun cool thing now feels like a burden to me. I go to a sorority event and I just feel this deep sadness; it sucks. If I cave and actually join a sorority, I’m just letting her win, and it encourages her to behave like this again when she can’t get me to do something she wants.  I want to make a note: I’m sure she does this from a place of love, it’s just hurting me.  AITA for doing this out of spite?"
     }
@@ -183,4 +216,4 @@ if __name__ == '__main__':
     log_dir = RUN_LOGS / f"test/debate"
     os.makedirs(log_dir, exist_ok=True)
 
-    print(run_debate_agent_node([], log_dir, post_json))
+    print(run_debate_agent_node([], log_dir, post_json, None))

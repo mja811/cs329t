@@ -41,8 +41,8 @@ def eval_df(df):
     fp = df[(df["flair"] == "NTA") & (df["verdict_short"] == "YTA")].count()[0]
     tn = df[(df["flair"] == "NTA") & (df["verdict_short"] == "NTA")].count()[0]
     fn = df[(df["flair"] == "YTA") & (df["verdict_short"] == "NTA")].count()[0]
-    precision = tp / (tp + fp)
-    recall = tp / (tp + fn)
+    precision = tn / (tn + fn)
+    recall = tn / (tn + fp)
 
     try:
         debate_CR_mean = df["debate_CR"].apply(lambda x: x["score"]).mean()
@@ -64,12 +64,12 @@ def eval_df(df):
         "advice_AR": advice_AR_mean,
         "advice_G": advice_G_mean,
     }
-    with open(RUN_LOGS / f"{run_name}/result.json", "w") as f:
+    with open(RUN_LOGS / f"{run_name}/resultn.json", "w") as f:
         json.dump(result_data, f, indent=4)
 
 
 if __name__ == '__main__':
-    run_name = "run_nta2"
+    run_name = "run_nta_comments_debateadviceeval"
     # df = run_eval(run_name)
     df = pd.read_csv(RUN_LOGS / f"{run_name}/result.csv")
     eval_df(df)

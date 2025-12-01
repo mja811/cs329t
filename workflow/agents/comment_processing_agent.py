@@ -130,10 +130,10 @@ def process_single_post_comments(post_dict, log_dir=None, use_saved_results=True
 
 
 def run_comment_processing_node(posts_list, log_dir=None, use_saved_results=True, agent_str="gpt-4o-mini"):
-    sorted_comments_data = []
+    sorted_comments_data = {}
     for post in posts_list:
         try:
-            sorted_comments_data.append(process_single_post_comments(post, log_dir, use_saved_results, agent_str))
+            sorted_comments_data[post["post_id"]] = process_single_post_comments(post, log_dir, use_saved_results, agent_str)
         except Exception as e:
             print(e)
     return sorted_comments_data

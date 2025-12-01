@@ -5,22 +5,30 @@ from langchain_openai import ChatOpenAI
 
 BASE_PROMPT = "You are an expert evaluator of AI-generated answers. Your task is to assess a model’s output based on the following criteria:"
 
-CRITERIA_DICT = {"answer relevance" : ("""Answer Relevance (1–5)
+CRITERIA_DICT = {
+    "answer relevance" : ("""Answer Relevance (1–5)
 Definition: How directly and completely does the answer address the user’s request?
 Scoring Guide:
 1: Completely irrelevant or off-topic.
-2: Partially relevant, but misses key aspects.
-3: Mostly relevant, but contains unnecessary or slightly off-topic info.
-4: Relevant and addresses almost all key points accurately.
-5: Fully relevant, precise, and directly answers the question.""", "REQUEST"),
+2: Somewhat relevant, but misses many key aspects.
+3: Partially relevant, but misses key aspects.
+4: Mostly relevant, but contains unnecessary or slightly off-topic info.
+5: Relevant and addresses almost all key points accurately.""", "REQUEST"),
+"context relevance" : ("""Context Relevance (1–5)
+Definition: How directly and completely does the debate match the original post's context?
+Scoring Guide:
+1: Debate is irrelevant.
+3: Debate is mostly irrelevant.
+4: Debate is partially irrelevant.
+5: Debate is logical and relevant.""", "REQUEST"),
 "groundedness" : ("""Groundedness (1–5)
 Definition: How well is the answer supported by factual, cited, or provided source material?
 Scoring Guide:
 1: Entirely ungrounded, speculative, or hallucinated.
 2: Minimal or unclear grounding; facts mostly unsupported.
-3: Some grounding but with a few unsupported claims.
-4: Mostly grounded, with minor speculative statements.
-5: Fully grounded; all statements traceable to provided sources or factual knowledge.""", "SOURCE")
+3: Some grounding but with unsupported claims.
+4: Mostly grounded, with some speculative statements.
+5: Well grounded; almost all statements traceable to provided sources.""", "SOURCE")
                  }
 
 OUT_PROMPT = """Output only a single-line JSON object with exactly these keys:

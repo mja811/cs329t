@@ -13,7 +13,7 @@ def create_advice_prompt(examples_formatted, mod_summary):
     prompt = f"""You are the advice agent. Read the following summary of an argument with two sides and a clear winner:
 {mod_summary} 
 {comment_text}
-Return the advice as a bulleted list{cite_text}.
+Return the advice as a bulleted list{cite_text}. Make the advice specifically targeted toward the post, referencing the exact context of the original poster. Do not list general principles, make sure every sentence is specific to the original post's situation.
 """
     # print(prompt)
     return HumanMessage(content=prompt)
